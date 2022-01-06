@@ -4,7 +4,6 @@ import * as filepath from "https://deno.land/std@0.119.0/path/mod.ts";
 import * as fs from "https://deno.land/std@0.119.0/fs/mod.ts";
 import { prettyBytes } from "https://deno.land/std@0.119.0/fmt/bytes.ts";
 //import * as zip from "https://deno.land/x/zipjs@v2.3.23/index.js";
-import * as fflate from 'https://cdn.skypack.dev/fflate?dts';
 import * as jszip from "https://deno.land/x/jszip/mod.ts";
 
 const version = "3.0.0-dev"
@@ -40,7 +39,7 @@ if (Deno.args.length === 0) {
 
 async function beginDetonation(path: string) {
     const parsedPath = filepath.parse(path);
-    const paths = [];
+    const paths: string[] = [];
 
     if (filepath.isGlob(path)) {
         for await (const file of fs.expandGlob(filepath.normalizeGlob(path), { globstar: true })) {
@@ -57,115 +56,89 @@ async function beginDetonation(path: string) {
                 await Deno.writeFile(filepath.join(detonatedPath, walkEntry.name), newZip);
             }
         }
-
-        /*
-        const regex = filepath.globToRegExp(path);
-
-        console.log(regex);
-
-        const detonatedPath = filepath.join(parsedPath.root, "/detonated/");
+    } else {
+        const detonatedPath = filepath.join(filepath.common(paths), "/detonated/");
         await fs.ensureDir(detonatedPath);
 
-        for await (const walkEntry of fs.walk(".", { includeDirs: false, match: [regex] })) {
-            const file = await Deno.readFile(walkEntry.path);
-            console.log(walkEntry.name);
-            const newZip = await detonateJar(file, false);
-            await Deno.writeFile(filepath.join(detonatedPath, walkEntry.name), newZip);
-        }
-        */
-    } else {
         const file = await Deno.readFile(path);
-        const newZip = await detonateJar(file, parsedPath.name, false);
-        await Deno.writeFile(path.concat("d"), newZip);
+        const newZip = await detonateJar(file, parsedPath.base, false);
+        await Deno.writeFile(filepath.join(detonatedPath, parsedPath.base), newZip);
     }
 }
 
 async function detonateJar(data: Uint8Array, name: string, jij: boolean) : Promise<Uint8Array> {
     console.log(`Detonating ${name}...`);
-
-    const newZip = new fflate.Zip();
-    let returnedData = new Uint8Array();
-    newZip.ondata = (err, data, final) => {
-        returnedData = new Uint8Array([...returnedData, ...data]);
-        if (final) {
-            return returnedData;
-        }
+    if (!jij) {
+        performance.mark("Test");
     }
-
-    let promises: Promise<Uint8Array>[] = []
-
-    const unzipper = new fflate.Unzip();
-    unzipper.register(fflate.UnzipInflate);
-    unzipper.onfile = file => {
-        const newFile = jij ? new fflate.ZipDeflate(file.name, { level: 0 }) : new fflate.ZipDeflate(file.name, { level: 9, mem: 8 });
-        newZip.add(newFile);
-        let newData = new Uint8Array();
-        file.ondata = async (err, data, final) => {
-            if (file.name.endsWith(".json") || file.name.endsWith(".mcmeta")) {
-                newData = new Uint8Array([...newData, ...data]);
-                if (final) {
-                    const i = promises.length;
-                    promises[i] = normalizeJson(newData);
-                    newFile.push(await promises[i], true);
-                }
-            } else if (file.name.endsWith(".png")) {
-                newData = new Uint8Array([...newData, ...data]);
-                if (final) {
-                    const i = promises.length;
-                    promises[i] = optimizePng(newData);
-                    newFile.push(await promises[i], true);
-                }
-            } else if (file.name.endsWith(".jar")) {
-                newData = new Uint8Array([...newData, ...data]);
-                if (final) {
-                    const i = promises.length;
-                    promises[i] = detonateJar(newData, file.name, true);
-                    newFile.push(await promises[i], true);
-                }
-            } else {
-                newFile.push(data, final);
-            }
-            //newFile.push(data, final);
-        }
-        file.start();
-    };
-    unzipper.push(data, true);
-    
-    await Promise.all(promises);
-    newZip.end();
-    console.log(`Successfully detonated ${name}! Size: ${prettyBytes(returnedData.length)} ${jij ? "(JiJ, Uncompressed)" : "(Mod, Compressed!)"}`)
-
-    return returnedData;
-}
-
-async function detonateJarWithJSZip(data: Uint8Array, name: string, jij: boolean) : Promise<Uint8Array> {
-    console.log(`Detonating ${name}...`);
     
     const newZip = new jszip.JSZip();
     
     const zip = new jszip.JSZip();
     await zip.loadAsync(data, { optimizedBinaryString: true });
-    for (const key in zip.files()) {
-        const file = zip.files()[key];
-        let data = await file.async("uint8array");
-        if (file.name.endsWith(".json") || file.name.endsWith(".mcmeta")) {
-            data = await normalizeJson(data);
-        } else if (file.name.endsWith(".png")) {
-            data = await optimizePng(data);
-        } else if (file.name.endsWith(".jar")) {
-            data = await detonateJarWithJSZip(data, file.name, true);
-        }
 
-        newZip.addFile(file.name, data);
+    // Sort the file keys, ensuring smaller file sizes
+    let keys = [];
+    for (const key in zip.files()) {
+        keys.push(key);
+    }
+    keys = keys.sort((a, b) => a > b ? 1 : (a < b ? -1 : 0));
+    console.log(keys);
+
+    let promises: Promise<Uint8Array>[] = [];
+    let newDataObject: { [key: string]: Uint8Array } = {}
+
+    for (const key of keys) {
+        const file = zip.files()[key];
+        const data = await file.async("uint8array");
+        if (file.name.endsWith(".json") || file.name.endsWith(".mcmeta")) {
+            promises.push(normalizeJson(data).then((newData) => {
+                Object.defineProperty(newDataObject, key, {
+                    value: newData
+                });
+                return newData;
+            }));
+        } else if (file.name.endsWith(".png")) {
+            promises.push(optimizePng(data).then((newData) => {
+                Object.defineProperty(newDataObject, key, {
+                    value: newData
+                });
+                return newData;
+            }));
+        } else if (file.name.endsWith(".jar")) {
+            promises.push(detonateJar(data, file.name, true).then((newData) => {
+                Object.defineProperty(newDataObject, key, {
+                    value: newData
+                });
+                return newData;
+            }));
+        } else {
+            Object.defineProperty(newDataObject, key, {
+                value: data
+            });
+        }
+    }
+
+    await Promise.all(promises);
+
+    for (const key of keys) {
+        newZip.addFile(key, newDataObject[key]);
     }
 
     const generatedZip = await newZip.generateAsync({
-		compression: jij ? "STORE" : "DEFLATE",
-		compressionOptions: jij ? null : { level: 9 },
-		mimeType: "application/java-archive",
-		type: "uint8array"
-	});
+        compression: jij ? "STORE" : "DEFLATE",
+        compressionOptions: jij ? null : { level: 9 },
+        mimeType: "application/java-archive",
+        type: "uint8array"
+    });
 
+    if (!jij) {
+        performance.mark("Test");
+        console.log(performance.measure("Test").duration);
+        performance.clearMarks("Test");
+        performance.clearMeasures("Test");
+    }
+    
     console.log(`Successfully detonated ${name}! Size: ${prettyBytes(generatedZip.length)} ${jij ? "(JiJ, Uncompressed)" : "(Mod, Compressed!)"}`)
 
     return generatedZip;
@@ -173,14 +146,14 @@ async function detonateJarWithJSZip(data: Uint8Array, name: string, jij: boolean
 
 async function normalizeJson(data : Uint8Array) : Promise<Uint8Array> {
     try {
-		const json = await JSON.parse(new TextDecoder("utf-8").decode(data));
-		const normalizedJson = new TextEncoder().encode(JSON.stringify(json, null, 2));
+        const json = await JSON.parse(new TextDecoder("utf-8").decode(data));
+        const normalizedJson = new TextEncoder().encode(JSON.stringify(json, null, 2));
         return normalizedJson;
-	} catch (error) {
-		console.error("The JSON file is malformed! It won't be minified.");
-		console.error(error);
+    } catch (error) {
+        console.error("The JSON file is malformed! It won't be minified.");
+        console.error(error);
         return data;
-	}
+    }
 }
 
 async function optimizePng(data : Uint8Array) : Promise<Uint8Array> {
