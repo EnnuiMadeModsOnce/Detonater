@@ -57,11 +57,12 @@ async function beginDetonation(path: string) {
             }
         }
     } else {
-        const detonatedPath = filepath.join(filepath.common(paths), "/detonated/");
+        const detonatedPath = filepath.join(parsedPath.dir, "/detonated/");
         await fs.ensureDir(detonatedPath);
 
         const file = await Deno.readFile(path);
         const newZip = await detonateJar(file, parsedPath.base, false);
+        console.log(parsedPath.base);
         await Deno.writeFile(filepath.join(detonatedPath, parsedPath.base), newZip);
     }
 }
