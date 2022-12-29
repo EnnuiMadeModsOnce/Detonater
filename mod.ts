@@ -1,10 +1,10 @@
-import * as log from "https://deno.land/std@0.119.0/log/mod.ts";
-import { brightBlue, cyan, bold } from "https://deno.land/std@0.119.0/fmt/colors.ts";
-import * as filepath from "https://deno.land/std@0.119.0/path/mod.ts";
-import * as fs from "https://deno.land/std@0.119.0/fs/mod.ts";
-import { prettyBytes } from "https://deno.land/std@0.119.0/fmt/bytes.ts";
+import * as log from "https://deno.land/std@0.170.0/log/mod.ts";
+import { brightBlue, cyan, bold } from "https://deno.land/std@0.170.0/fmt/colors.ts";
+import * as filepath from "https://deno.land/std@0.170.0/path/mod.ts";
+import * as fs from "https://deno.land/std@0.170.0/fs/mod.ts";
+import * as bytes from "https://deno.land/std@0.170.0/fmt/bytes.ts";
 //import * as zip from "https://deno.land/x/zipjs@v2.3.23/index.js";
-import * as jszip from "https://deno.land/x/jszip/mod.ts";
+import * as jszip from "https://deno.land/x/zippy@0.1.0/mod.ts";
 
 const version = "3.0.0-dev"
 
@@ -62,7 +62,7 @@ async function beginDetonation(path: string) {
 
         const file = await Deno.readFile(path);
         const newZip = await detonateJar(file, parsedPath.base, false);
-        console.log(parsedPath.base);
+        // console.log(parsedPath.base);
         await Deno.writeFile(filepath.join(detonatedPath, parsedPath.base), newZip);
     }
 }
@@ -84,10 +84,10 @@ async function detonateJar(data: Uint8Array, name: string, jij: boolean) : Promi
         keys.push(key);
     }
     keys = keys.sort((a, b) => a > b ? 1 : (a < b ? -1 : 0));
-    console.log(keys);
+    // console.log(keys);
 
-    let promises: Promise<Uint8Array>[] = [];
-    let newDataObject: { [key: string]: Uint8Array } = {}
+    const promises: Promise<Uint8Array>[] = [];
+    const newDataObject: { [key: string]: Uint8Array } = {}
 
     for (const key of keys) {
         const file = zip.files()[key];
@@ -140,7 +140,7 @@ async function detonateJar(data: Uint8Array, name: string, jij: boolean) : Promi
         performance.clearMeasures("Test");
     }
     
-    console.log(`Successfully detonated ${name}! Size: ${prettyBytes(generatedZip.length)} ${jij ? "(JiJ, Uncompressed)" : "(Mod, Compressed!)"}`)
+    console.log(`Successfully detonated ${name}! Size: ${bytes.format(generatedZip.length)} ${jij ? "(JiJ, Uncompressed)" : "(Mod, Compressed!)"}`)
 
     return generatedZip;
 }
@@ -162,7 +162,7 @@ async function optimizePng(data : Uint8Array) : Promise<Uint8Array> {
     try {
         await Deno.writeFile(tempPng, data);
         await Deno.run({
-            cmd: ["oxipng", `--opt`, `max`, `-D`, `--strip`, `safe`, `--alpha`, tempPng],
+            cmd: ["oxipng", "--opt", "max", "--strip", "safe", "--alpha", tempPng],
             stdout: "piped"
         }).output();
         const newData = await Deno.readFile(tempPng);
@@ -172,4 +172,16 @@ async function optimizePng(data : Uint8Array) : Promise<Uint8Array> {
         await Deno.remove(tempPng);
         return data;
     }
+    // TODO - aaaaaaaa make this work
+    /*
+    const command = new Deno.Command("oxipng", {
+        args: ["--opt", "max", "--strip", "safe", "--alpha", "--stdout", "-"],
+        stdin: "piped",
+        stdout: "piped"
+    }).spawn();
+    await command.stdin.getWriter().write(data);
+    
+    await command.stdin.close();
+    return (await command.output()).stdout;
+    */
 }
