@@ -158,30 +158,31 @@ async function normalizeJson(data : Uint8Array) : Promise<Uint8Array> {
 }
 
 async function optimizePng(data : Uint8Array) : Promise<Uint8Array> {
-    const tempPng = await Deno.makeTempFile({ prefix: "detonater_", suffix: ".png" });
     try {
-        await Deno.writeFile(tempPng, data);
-        await Deno.run({
-            cmd: ["oxipng", "--opt", "max", "--strip", "safe", "--alpha", tempPng],
-            stdout: "piped"
-        }).output();
-        const newData = await Deno.readFile(tempPng);
-        Deno.remove(tempPng);
-        return newData;
-    } catch {
-        await Deno.remove(tempPng);
+        const command = new Deno.Command("oxipng", {
+            args: [
+                "--opt", "max",
+                "--strip", "safe",
+                "--alpha",
+                "--stdout", "-"
+            ],
+            stdin: "piped",
+            stdout: "piped",
+            stderr: "piped",
+        });
+        
+        const child = command.spawn();
+        const writer = child.stdin.getWriter();
+        
+        await writer.write(data);
+        writer.releaseLock();
+        child.stdin.close();
+
+        const result = await child.output();
+
+        return result.stdout;
+    } catch (error) {
+        console.error("Error optimizing image:", error);
         return data;
     }
-    // TODO - aaaaaaaa make this work
-    /*
-    const command = new Deno.Command("oxipng", {
-        args: ["--opt", "max", "--strip", "safe", "--alpha", "--stdout", "-"],
-        stdin: "piped",
-        stdout: "piped"
-    }).spawn();
-    await command.stdin.getWriter().write(data);
-    
-    await command.stdin.close();
-    return (await command.output()).stdout;
-    */
 }
