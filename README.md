@@ -20,7 +20,7 @@ In order to run this tool, you will need to have [Deno](https://deno.land/) and 
 
 After both are installed, you can now install the Detonater as a CLI utility with the following command:
 
-`$ deno install ---allow-read --allow-write --allow-run -n "detonater" https://raw.githubusercontent.com/EnnuiL/Detonater/main/mod.ts`
+`$ deno install --allow-read --allow-write --allow-run -n "detonater" https://raw.githubusercontent.com/EnnuiL/Detonater/dev/mod.ts`
 
 Now you have the Detonater installed! Some examples of usage of this command are:
 
